@@ -1,8 +1,9 @@
 pipeline {
     agent any
-
+    when {branch 'master'}
     stages {
         stage('Setup') {
+            when {branch 'master'}            
             steps{
                 bat '''
                     python -m pip install --upgrade pip
@@ -12,6 +13,7 @@ pipeline {
             }
         }
         stage('serverSetup') {
+            when {branch 'master'}
             steps {
                 powershell '''
                     Start-Process "java" -ArgumentList "-jar D:\\wiremock-standalone-3.10.0.jar --port 9090 --root-dir $env:WORKSPACE\\test\\wiremock"
@@ -25,12 +27,13 @@ pipeline {
             }
         }
         stage('GetCode') {
+            when {branch 'master'}
             steps {
                 bat 'git clone https://github.com/alejandro-lopco/CasoPractico1A .'
-
             }
         }
         stage('Service') {
+            when {branch 'master'}
             parallel {
                 stage('Unit') {
                     steps {
@@ -55,6 +58,7 @@ pipeline {
             }
         }
         stage('Resultados') {
+            when {branch 'master'}
             steps {
                 junit 'result*.xml'
             }
