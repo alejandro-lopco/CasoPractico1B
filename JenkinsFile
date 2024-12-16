@@ -25,7 +25,7 @@ stage('Setup') {
         }
         stage('GetCode') {
             steps {
-                bat 'git clone https://github.com/alejandro-lopco/CasoPractico1A .'
+                bat 'git clone https://github.com/alejandro-lopco/CasoPractico1A'
             }
         }
 stage('Service') {
