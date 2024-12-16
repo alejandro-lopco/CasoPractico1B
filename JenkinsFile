@@ -1,0 +1,63 @@
+pipeline {
+    agent any
+
+    stages {
+        stage('Setup') {
+            steps{
+                bat '''
+                    python -m pip install --upgrade pip
+                    python -m pip install pytest
+                    python -m pip install flask
+                '''
+            }
+        }
+        stage('serverSetup') {
+            steps {
+                powershell '''
+                    Start-Process "java" -ArgumentList "-jar D:\\wiremock-standalone-3.10.0.jar --port 9090 --root-dir $env:WORKSPACE\\test\\wiremock"
+                    Start-Sleep -Seconds 5
+                    echo "Inicializado WireMock"
+                    $env:FLASK_APP="app.api"
+                    Start-Process "python" -ArgumentList "-m flask run"
+                    Start-Sleep -Seconds 5
+                    echo "Inicializado Flask"
+                    '''
+            }
+        }
+        stage('GetCode') {
+            steps {
+                bat 'git clone https://github.com/alejandro-lopco/CasoPractico1A .'
+
+            }
+        }
+        stage('Service') {
+            parallel {
+                stage('Unit') {
+                    steps {
+                        catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                            bat '''
+                                set PYTHONPATH=%WORKSPACE%
+                                python -m pytest --junitxml=result-unit.xml test\\unit
+                            '''
+                        }
+                    }
+                }
+                stage('Rest') {
+                    steps {
+                        catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                            bat '''
+                                set PYTHONPATH=%WORKSPACE%
+                                python -m pytest --junitxml=result-rest.xml test\\rest
+                                '''
+                        }
+                    }
+                }
+            }
+        }
+        stage('Resultados') {
+            steps {
+                junit 'result*.xml'
+            }
+        }
+    }
+}
