@@ -1,7 +1,8 @@
 pipeline {
     agent any
     stages {
-        stage('Setup') {  
+        stage('Setup') {
+            agent { node 'agente1' }  
             steps{
                 bat '''
                     python -m pip install --upgrade pip
@@ -11,6 +12,7 @@ pipeline {
             }
         }
         stage('serverSetup') {
+            agent { node 'agente1' }  
             steps {
                 powershell '''
                     Start-Process "java" -ArgumentList "-jar D:\\wiremock-standalone-3.10.0.jar --port 9090 --root-dir $env:WORKSPACE\\test\\wiremock"
@@ -24,35 +26,39 @@ pipeline {
             }
         }
         stage('GetCode') {
+            agent { node 'agente1' }
             steps {
                 bat 'git clone https://github.com/alejandro-lopco/CasoPractico1A'
+                stash includes: '**', name: 'repositorio'
             }
         }
-        stage('Service') {
-            parallel {
-                stage('Unit') {
-                    steps {
-                        catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
-                            bat '''
-                                set PYTHONPATH=%WORKSPACE%
-                                python -m pytest --junitxml=result-unit.xml test\\unit
-                            '''
-                        }
-                    }
-                }
-                stage('Rest') {
-                    steps {
-                        catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
-                            bat '''
-                                set PYTHONPATH=%WORKSPACE%
-                                python -m pytest --junitxml=result-rest.xml test\\rest
-                                '''
-                        }
-                    }
-                }
+        stage('unitTest') {
+            agent { node 'agente2' }
+            steps {
+                catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                    unstash 'repositorio'
+                    bat '''
+                        set PYTHONPATH=%WORKSPACE%\\CasoPractico1A
+                        python -m pytest --junitxml=result-unit.xml CasoPractico1A\\test\\unit
+                    '''
+                }  
+                
             }
         }
+        stage('restTest') {
+            agent { node 'agente2' }
+            steps {
+                unstash 'repositorio'
+                catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                    bat '''
+                        set PYTHONPATH=%WORKSPACE%\\CasoPractico1A
+                        python -m pytest --junitxml=result-rest.xml CasoPractico1A\\test\\rest
+                        '''
+                }
+            }
+        }                
         stage('Resultados') {
+            agent { node 'agente2' }
             steps {
                 junit 'result*.xml'
             }
