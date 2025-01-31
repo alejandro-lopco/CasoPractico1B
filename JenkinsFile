@@ -28,6 +28,7 @@ pipeline {
         stage('GetCode') {
             agent { node 'agente1' }
             steps {
+                cleanWs()
                 bat 'git clone https://github.com/alejandro-lopco/CasoPractico1A'
                 stash includes: '**', name: 'repositorio'
             }
@@ -38,8 +39,8 @@ pipeline {
                 catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
                     unstash 'repositorio'
                     bat '''
-                        set PYTHONPATH=%WORKSPACE%\\CasoPractico1A
-                        python -m pytest --junitxml=result-unit.xml CasoPractico1A\\test\\unit
+                        set PYTHONPATH=%WORKSPACE%\\CasoPractico1B
+                        python -m pytest --junitxml=result-unit.xml CasoPractico1B\\test\\unit
                     '''
                 }  
                 
@@ -51,17 +52,27 @@ pipeline {
                 unstash 'repositorio'
                 catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
                     bat '''
-                        set PYTHONPATH=%WORKSPACE%\\CasoPractico1A
-                        python -m pytest --junitxml=result-rest.xml CasoPractico1A\\test\\rest
+                        set PYTHONPATH=%WORKSPACE%\\CasoPractico1B
+                        python -m pytest --junitxml=result-rest.xml CasoPractico1B\\test\\rest
                         '''
                 }
             }
-        }                
-        stage('Resultados') {
+        }
+        stage('staticTest') {
             agent { node 'agente2' }
             steps {
-                junit 'result*.xml'
+                unstash 'repositorio'
+                catchError (buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                    bat '''
+                        pyhton -m flake8 --format=pylint --exit-zero app > flake8.out
+                        '''
+                    recordIssues tools: [flake8(name: 'Flake8', pattern: 'flake8.out')],
+                        qualityGates: [
+                            [threshold: 8, type: 'TOTAL', unstable: true],
+                            [threshold: 10, type: 'TOTAL', unstable: false]
+                        ]
+                }
             }
-        }
+        }        
     }
 }
