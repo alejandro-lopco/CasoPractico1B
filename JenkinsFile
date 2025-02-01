@@ -103,7 +103,7 @@ pipeline {
                 catchError (buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
                     powershell '''
                         $env:PYTHONPATH = "$env:WORKSPACE\\CasoPractico1B"
-                        python -m coverage run --branch --source=app --omit=app\\__init__.py,app\\api -m pytest casoPractico1B\\test\\unit
+                        python -m coverage run --branch --source=app --omit=casoPractico1B\\app\\__init__.py,casoPractico1B\\app\\api.py -m pytest casoPractico1B\\test\\unit
                         python -m coverage xml
                     '''
                     cobertura coberturaReportFile: 'coverage.xml', conditionalCoverageTargets: '90, 80', lineCoverageTargets: '95,85'
