@@ -1,0 +1,171 @@
+pipeline {
+    agent any
+    stages {
+        stage ('setupAgente1') {
+            parallel {
+                stage('setup') {
+                    agent { node 'agente1' }
+                    steps {
+                        cleanWs()
+                        powershell '''
+                            whoami
+                            hostname
+                            echo $env:WORKSPACE
+                            python -m pip install --upgrade pip
+                            python -m pip install pytest
+                            python -m pip install flask
+                            python -m pip install flake8
+                            python -m pip install bandit
+                            python -m pip install coverage
+                        '''
+                    }
+                }
+                stage('serverSetup') {
+                    agent { node 'agente1' }  
+                    steps {
+                        powershell '''
+                            whoami
+                            hostname
+                            echo $env:WORKSPACE
+                            Start-Process "java" -ArgumentList "-jar D:\\wiremock-standalone-3.10.0.jar --port 9090 --root-dir $env:WORKSPACE\\test\\wiremock"
+                            Start-Sleep -Seconds 5
+                            echo "Inicializado WireMock"
+                            $env:FLASK_APP="app.api"
+                            Start-Process "python" -ArgumentList "-m flask run"
+                            Start-Sleep -Seconds 5
+                            echo "Inicializado Flask"
+                            '''
+                    }
+                }
+                stage('GetCode') {
+                    agent { node 'agente1' }
+                    steps {
+                        powershell '''
+                            whoami
+                            hostname
+                            echo $env:WORKSPACE
+                            git clone https://github.com/alejandro-lopco/CasoPractico1B 
+                        '''
+                        stash includes: '**', name: 'repositorio'
+                    }
+                }
+            }
+        }
+        stage ('testsAgente2') {
+            parallel {
+                stage('unitTest') {
+                    agent { node 'agente2' }
+                    steps {
+                        catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                            cleanWs()
+                            unstash 'repositorio'
+                            powershell '''
+                                whoami
+                                hostname
+                                echo $env:WORKSPACE
+                                $env:PYTHONPATH = "$env:WORKSPACE\\CasoPractico1B"
+                                python -m pytest --junitxml=result-unit.xml CasoPractico1B\\test\\unit
+                            '''
+                            junit 'result-unit.xml'
+                        }  
+                        
+                    }
+                }
+                stage('staticTest') {
+                    agent { node 'agente2' }
+                    steps {
+                        unstash 'repositorio'
+                        catchError (buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                            powershell '''
+                                $env:PYTHONPATH = "$env:WORKSPACE\\CasoPractico1B"
+                                whoami
+                                hostname
+                                echo $env:WORKSPACE
+                                python -m flake8 --format=pylint --exit-zero app > flake8.out
+                                '''
+                            recordIssues tools: [flake8(name: 'Flake8', pattern: 'flake8.out')],
+                                qualityGates: [
+                                    [threshold: 8, type: 'TOTAL', unstable: true],
+                                    [threshold: 10, type: 'TOTAL', unstable: false]
+                                ]
+                        }
+                    }
+                }
+                stage('securityTest') {
+                    agent { node 'agente2' }
+                    steps {
+                        unstash 'repositorio'
+                        catchError (buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                            powershell '''
+                                whoami
+                                hostname
+                                echo $env:WORKSPACE                            
+                                $env:PYTHONPATH = "$env:WORKSPACE\\CasoPractico1B"
+                                python -m bandit --exit-zero -r CasoPractico1B\\ -f custom -o bandit.out --msg-template "{abspath}:{line}: [{test_id} {msg}]"
+                            '''
+                            recordIssues tools: [pyLint(name: 'Bandit', pattern: 'bandit.out')],
+                                qualityGates: [
+                                    [threshold: 2, type: 'TOTAL', unstable: true],
+                                    [threshold: 4, type: 'TOTAL', unstable: false]
+                                ]
+                        }
+                    }
+                }
+                stage('coverageTest') {
+                    agent { node 'agente2' }
+                    steps {
+                        unstash 'repositorio'
+                        catchError (buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                            powershell '''
+                                whoami
+                                hostname
+                                echo $env:WORKSPACE                            
+                                $env:PYTHONPATH = "$env:WORKSPACE\\CasoPractico1B"
+                                python -m coverage run --branch --source=app --omit=app\\__init__.py,app\\api -m pytest casoPractico1B\\test\\unit
+                                python -m coverage xml
+                            '''
+                            cobertura coberturaReportFile: 'coverage.xml', conditionalCoverageTargets: '90, 80', lineCoverageTargets: '95,85'
+                        }
+                    }
+                }
+            }
+        }
+        stage ('testsAgente3') {
+            parallel {
+                stage('restTest') {
+                    agent { node 'agente3' }
+                    steps {
+                        cleanWs()
+                        unstash 'repositorio'
+                        catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                            powershell '''
+                                whoami
+                                hostname
+                                echo $env:WORKSPACE                            
+                                $env:PYTHONPATH = "$env:WORKSPACE\\CasoPractico1B"
+                                python -m pytest --junitxml=result-rest.xml CasoPractico1B\\test\\rest
+                                '''
+                        }
+                    }
+                }
+                stage('performanceTest') {
+                    agent { node 'agente3' }
+                    steps {
+                        unstash 'repositorio'
+                        catchError (buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                            powershell '''
+                                whoami
+                                hostname
+                                echo $env:WORKSPACE                            
+                                $env:PATH += ";D:\\apache-jmeter-5.6.3\\bin"
+                                $env:PYTHONPATH = "$env:WORKSPACE\\CasoPractico1B"
+                                jmeter -n -t casoPractico1B\\test\\jmeter\\flask.jmx -f -l flask.jtl
+                            '''
+                            perfReport sourceDataFiles: 'flask.jtl'
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
